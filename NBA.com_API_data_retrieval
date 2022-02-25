@@ -1,0 +1,155 @@
+#### Download first version of individual player data
+
+## Import modules
+from nba_api.stats.endpoints import playergamelog
+import pandas as pd
+import numpy as np
+import datetime
+
+## Choosse Player
+#LeBron James=2544, Anthony Davis=203076, Malik Monk = 1628370, Russell Westbrook=201566, Tyrese Haliburton=1630169
+#To find player id use following command: 
+#from nba_api.stats.static import players
+#players.find_players_by_full_name('ball')
+
+def active_games_player(ID):
+    Year='2021'
+
+    ## Import season statistics as a list
+    gamelog_player = playergamelog.PlayerGameLog(player_id=ID, season = Year)
+    list_player_games_2021 = gamelog_player.get_data_frames()
+
+
+    ## Convert season stats from list to dataframe
+    df_player_games_2021=pd.DataFrame(np.concatenate(list_player_games_2021))
+
+    ## Add column names to dataframe
+    df_player_games_2021.rename(columns={0: 'SEASON_ID', 1: 'PLAYER_ID',2: 'GAME_ID', 3: 'GAME_DATE',4: 'MATCHUP', 5: 'WL',6: 'MIN', 7: 'FGM',8: 'FGA', 9: 'FG_PCT',10: 'FG3M', 11: 'FG3A',12: 'FG3_PCT', 13: 'FTM',14: 'FTA', 15: 'FT_PCT',16: 'OREB', 17: 'DREB',18: 'REB', 19: 'AST',20: 'STL', 21: 'BLK',22: 'TOV', 23: 'PF',24: 'PTS', 25: 'PLUS_MINUS',26: 'VIDEO_AVAILABLE'}, inplace=True)
+
+    for i in range(0,len(df_player_games_2021["GAME_DATE"])):
+        gamedate = datetime.datetime.strptime(df_player_games_2021["GAME_DATE"][i], "%b %d, %Y")
+        df_player_games_2021["GAME_DATE"][i] = gamedate.date()
+    return(df_player_games_2021)
+
+df_active_games_player=active_games_player("1627936") ##Input Player Number Here!!
+
+#### Download Team Data
+
+## Import modules
+from nba_api.stats.endpoints import leaguegamefinder
+import pandas as pd
+
+Team=0
+def all_games_team(Team):
+    
+    from nba_api.stats.static import teams
+
+    # Find all games for specified team
+    teams = teams.get_teams()
+    specific_team = [x for x in teams if x['full_name'] == Team][0]
+    specific_team_id = specific_team['id']
+    gamefinder = leaguegamefinder.LeagueGameFinder(team_id_nullable=specific_team_id)
+    games = gamefinder.get_data_frames()[0]
+
+    ## Query games for only this season
+    team_games_2021 = games[games["SEASON_ID"] == "22021"]
+    ## Convert date of game from string into datetime
+    team_games_2021.loc[:,'GAME_DATE'] = pd.to_datetime(team_games_2021.loc[:,'GAME_DATE'])
+
+    ## Order team games chronolgocially
+    team_games_2021=team_games_2021.sort_values(by='GAME_DATE',ascending=True)
+    team_games_2021.index = range(len(team_games_2021))  
+
+    ## Delete pre-season games
+    for i in range(0,len(team_games_2021)):
+        if team_games_2021.loc[i,"GAME_DATE"].month == 8:
+            team_games_2021 = team_games_2021.drop(labels=i, axis=0)
+    team_games_2021=team_games_2021.reset_index()
+    team_games_2021=team_games_2021.drop('index',axis=1)
+    return(team_games_2021)
+    
+df_team_games=all_games_team("Chicago Bulls")  ##Input Team Player is on here!! (Will not work for players who have been on multiple teams)
+
+## Add games players did not play
+def add_all_games_player(df_player_games_active, team_games):
+    
+    for i in range(0,len(team_games)):
+        played = team_games['GAME_DATE'][i] == df_player_games_active['GAME_DATE']
+        if sum(played) == 0:
+            df_player_games_active.loc[len(df_player_games_active)] = 0 #Add a new row of 0's for missed game
+            df_player_games_active['GAME_DATE'][len(df_player_games_active)-1] = team_games['GAME_DATE'][i].date()
+            df_player_games_active['SEASON_ID'][len(df_player_games_active)-1] = team_games['SEASON_ID'][i]
+            df_player_games_active['PLAYER_ID'][len(df_player_games_active)-1] = df_player_games_active['PLAYER_ID'][i]
+            df_player_games_active['GAME_ID'][len(df_player_games_active)-1] = team_games['GAME_ID'][i]
+            df_player_games_active['MATCHUP'][len(df_player_games_active)-1] = team_games['MATCHUP'][i]
+            df_player_games_active['WL'][len(df_player_games_active)-1] = team_games['WL'][i]
+
+    ## Order player games chronologically
+    df_player_games_active=df_player_games_active.sort_values(by='GAME_DATE',ascending=True)
+    df_player_games_active.index = range(len(df_player_games_active))
+
+    ## From "MATCHUP" column, create new column called "OPPONET", will need to use dictionary to 
+    ## convert team abbreviation to full name (matching the name in the opponent shooting database)
+    df_player_games_active.insert(5,"OPPONET", [0] * len(df_player_games_active),True)
+    for i in range(0,len(df_player_games_active)):
+        text = df_player_games_active["MATCHUP"][i]
+        text_split = text.split()
+        opp = text_split[2]
+        df_player_games_active.loc[i,"OPPONET"] = opp
+    return(df_player_games_active)
+
+df_all_games_player=add_all_games_player(df_active_games_player, df_team_games)
+
+## Import Player Download function
+## Import opponet shooting stats
+import gspread as gs
+import pandas as pd
+from nba_api.stats.static import teams
+
+# Find all games for specified team
+teams = teams.get_teams()
+
+def Player_Download(file_path):
+    gc = gs.service_account(filename='/Users/hunter/Downloads/client_secret.json')
+    sh = gc.open_by_url(file_path)
+    ws = sh.worksheet('Sheet1')
+    player_stats = pd.DataFrame(ws.get_all_records())
+    return(player_stats)
+Teams_Opp_shooting = Player_Download('https://docs.google.com/spreadsheets/d/16VlmbAcVFPza-wkPr3qqIEjby2Wkq4hWDD9r9GZAcDU/edit#gid=0')
+
+def add_opp_shots(all_games_player):
+    ## Create new empty columns
+    l = ["For " + Teams_Opp_shooting.columns[2] + " OPP D. Allows ", "For " + Teams_Opp_shooting.columns[5] + " OPP D. Allows ", 
+         "For " + Teams_Opp_shooting.columns[8] + " OPP D. Allows ", "For " + Teams_Opp_shooting.columns[11] + " OPP D. Allows ", 
+         "For " + Teams_Opp_shooting.columns[14] + " OPP D. Allows ", "For " + Teams_Opp_shooting.columns[17] + " OPP D. Allows "]
+    for col in l:
+        all_games_player[col] = 0
+
+    ## Replace opponet abbreviation with full team name
+
+    for j in range (0,len(all_games_player)):
+        opp_abbrev = all_games_player["OPPONET"][j]
+        opp_abbrev_index = next((index for (index, d) in enumerate(teams) if d["abbreviation"] == opp_abbrev), None)
+        values = teams[opp_abbrev_index].values()
+        values_list = list(values)
+        full_name_value = values_list[1]
+        #full_name_value_t
+        all_games_player.loc[j,"OPPONET"] = full_name_value
+        ## Fill in empty columns with opponet shooting stats
+        Teams_Opp_shooting.loc[12,'TEAM'] = "Los Angeles Clippers"
+        #full_name_value_t
+        df_team = Teams_Opp_shooting[Teams_Opp_shooting['TEAM'].str.contains(full_name_value)]
+        #print(type(all_games_player.loc[j, 'For < 5 ft. FG% OPP D. Allows ']))
+        #print(type(df_team['< 5 ft. FG%'].values[0]))
+        #Change % to FGA!!
+        all_games_player.loc[j, 'For < 5 ft. FGA OPP D. Allows '] = df_team['< 5 ft. FGA'].values[0]
+        all_games_player.loc[j, 'For 5-9 ft. FGA OPP D. Allows '] = df_team['5-9 ft. FGA'].values[0]
+        all_games_player.loc[j, 'For 10-14 ft. FGA OPP D. Allows '] = df_team['10-14 ft. FGA'].values[0]
+        all_games_player.loc[j, 'For 15-19 ft. FGA OPP D. Allows '] = df_team['15-19 ft. FGA'].values[0]
+        all_games_player.loc[j, 'For 20-24 ft. FGA OPP D. Allows '] = df_team['20-24 ft. FGA'].values[0]
+        all_games_player.loc[j, 'For 25-29 ft. FGA OPP D. Allows '] = df_team['25-29 ft. FGA'].values[0]
+        
+        
+    return(all_games_player)
+df_all_games_opp_shots_player = add_opp_shots(df_all_games_player)
+df_all_games_opp_shots_player
