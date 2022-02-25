@@ -1,0 +1,5 @@
+from nba_api.stats.static import players
+def player(info):
+  info = players.find_players_by_full_name(info)
+  return(info)
+player("Alex Caruso")
