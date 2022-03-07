@@ -1,0 +1,14 @@
+import gspread as gs
+import pandas as pd
+import matplotlib.pyplot as plt
+
+##Function that downloads google sheet into pandas
+def Player_Download(file_path):
+    gc = gs.service_account(filename='/Users/hunter/Downloads/client_secret.json') #Replace with local filepath
+    sh = gc.open_by_url(file_path)
+    ws = sh.worksheet('Sheet1')
+    player_stats = pd.DataFrame(ws.get_all_records())
+    return(player_stats)
+
+## Download player stats from Google Sheets
+lebron_stats = Player_Download('https://docs.google.com/spreadsheets/d/1HpknVXAMoQuachJQNsm2mmlvurkQasFKDD6sJB76eHs/edit') #replace with Google Drive url
