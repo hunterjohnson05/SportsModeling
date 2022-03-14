@@ -1,0 +1,17 @@
+def player_and_opp_stats(df_player):
+    all_games_player = df_player
+
+    l = [Team_advanced_stats.columns[11], Team_advanced_stats.columns[12], Team_advanced_stats.columns[13], Team_advanced_stats.columns[14]]
+    for col in l:
+        all_games_player[col] = 0
+
+    ## Replace opponet abbreviation with full team name
+    for j in range (0,len(all_games_player)):
+        full_name_value = all_games_player["OPPONET"][j]
+        df_team = Team_advanced_stats[Team_advanced_stats['Team'].str.contains(full_name_value)]
+        all_games_player.loc[j, 'ORtg'] = df_team['ORtg'].values[0]
+        all_games_player.loc[j, 'DRtg'] = df_team['DRtg'].values[0]
+        all_games_player.loc[j, 'NRtg'] = df_team['NRtg'].values[0]
+        all_games_player.loc[j, 'Pace'] = df_team['Pace'].values[0]
+        ##Why is FTr added!?
+    return(all_games_player)
